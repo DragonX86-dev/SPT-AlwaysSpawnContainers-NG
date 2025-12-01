@@ -3,6 +3,7 @@ using SPTarkov.DI.Annotations;
 using SPTarkov.Server.Core.DI;
 using SPTarkov.Server.Core.Helpers;
 using SPTarkov.Server.Core.Models.Common;
+using SPTarkov.Server.Core.Models.Eft.Common;
 using SPTarkov.Server.Core.Servers;
 
 namespace AlwaysSpawnSomeStaticContainers;
@@ -14,25 +15,43 @@ public class AlwaysSpawnContainersExtension(ModHelper modHelper, DatabaseServer 
     {
         var pathToMod = modHelper.GetAbsolutePathToModFolder(Assembly.GetExecutingAssembly());
         var containerIds = modHelper.GetJsonDataFromFile<MongoId[]>(pathToMod, "config.json");
+        var locationsDict = databaseServer.GetTables().Locations.GetDictionary();
 
-        databaseServer
-            .GetTables()
-            .Locations
-            .GetDictionary().Select(e => e.Value).ToList()
-            .ForEach(location =>
+        foreach (var location in locationsDict.Select(e => e.Value))
+        {
+            var containersInGroupCount = new Dictionary<string, int>();
+            
+            if (location.Statics?.Containers == null) continue;
+            if (location.Statics?.ContainersGroups == null) continue;
+            if (location.StaticContainers?.Value == null) continue;
+            
+            foreach (var staticContainer in location.StaticContainers.Value.StaticContainers)
             {
-                if (location.StaticContainers?.Value == null) return;
-
-                location.StaticContainers.Value.StaticContainers.ToList().ForEach(staticContainer =>
+                if (staticContainer.Probability.Equals(1.0f) 
+                    || staticContainer.Template?.Id == null || staticContainer.Template?.Items == null
+                    || !containerIds.Contains(staticContainer.Template.Items.First().Template))
                 {
-                    if (staticContainer.Template?.Items == null) return;
+                    continue;
+                }
+                
+                var groupId = location.Statics.Containers[staticContainer.Template.Id].GroupId!;
+                if (!containersInGroupCount.TryAdd(groupId, 1))
+                {
+                    containersInGroupCount[groupId] += 1;
+                }
 
-                    if (containerIds.Contains(staticContainer.Template.Items.First().Id))
-                    {
-                        staticContainer.Probability = 1;
-                    }
-                });
-            });
+                staticContainer.Probability = 1;
+            }
+
+            foreach (var containersInGroup in containersInGroupCount.ToList())
+            {
+                if (!location.Statics.ContainersGroups.TryGetValue(containersInGroup.Key, out var containersGroup))
+                    continue;
+                
+                containersGroup.MinContainers += containersInGroup.Value;
+                containersGroup.MaxContainers += containersInGroup.Value;
+            }
+        }
 
         return Task.CompletedTask;
     }
