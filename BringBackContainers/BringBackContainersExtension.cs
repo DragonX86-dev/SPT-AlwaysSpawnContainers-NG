@@ -1,20 +1,24 @@
 ﻿using System.Reflection;
 using SPTarkov.DI.Annotations;
 using SPTarkov.Server.Core.DI;
-using SPTarkov.Server.Core.Helpers;
+using SPTarkov.Server.Core.Helpers.Server;
 using SPTarkov.Server.Core.Models.Common;
-using SPTarkov.Server.Core.Servers;
+using SPTarkov.Server.Core.Models.Spt.Tables;
 
 namespace BringBackContainers;
 
-[Injectable(TypePriority = OnLoadOrder.PostDBModLoader + 1)]
-public class BringBackContainersExtension(ModHelper modHelper, DatabaseServer databaseServer) : IOnLoad
+[Injectable(TypePriority = OnLoadOrder.PostLoad + 1)]
+public class BringBackContainersExtension(
+    LocationTable locationTable,
+    ModHelper modHelper) : IOnLoad
 {
-    public Task OnLoad()
+    public Task OnLoadAsync(CancellationToken cancellationToken)
     {
         var pathToMod = modHelper.GetAbsolutePathToModFolder(Assembly.GetExecutingAssembly());
-        var containerIds = modHelper.GetJsonDataFromFile<MongoId[]>(pathToMod, "config.json");
-        var locationsDict = databaseServer.GetTables().Locations.GetDictionary();
+        var containerIds = modHelper.GetJsonDataFromFile<MongoId[]>(
+            pathToMod, Path.Combine("data", "config.json")
+        );
+        var locationsDict = locationTable.GetDictionary();
 
         foreach (var location in locationsDict.Select(e => e.Value))
         {
